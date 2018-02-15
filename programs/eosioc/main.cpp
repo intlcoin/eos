@@ -54,8 +54,8 @@ Usage: ./eosc create account [OPTIONS] creator name OwnerKey ActiveKey
 Positionals:
   creator TEXT                The name of the account creating the new account
   name TEXT                   The name of the new account
-  OwnerKey TEXT               The owner public key for the account
-  ActiveKey TEXT              The active public key for the account
+  OwnerKey TEXT               The owner public key for the new account
+  ActiveKey TEXT              The active public key for the new account
 
 Options:
   -s,--skip-signature         Specify that unlocked wallet keys should not be used to sign transaction
@@ -221,13 +221,15 @@ void add_standard_transaction_options(CLI::App* cmd) {
    cmd->add_flag("-f,--force-unique", tx_force_unique, localized("force the transaction to be unique. this will consume extra bandwidth and remove any protections against accidently issuing the same transaction multiple times"));
 }
 
-uint64_t generate_nonce_value() {
-   return fc::time_point::now().time_since_epoch().count();
+string generate_nonce_value() {
+   return fc::to_string(fc::time_point::now().time_since_epoch().count());
 }
 
 chain::action generate_nonce() {
    auto v = generate_nonce_value();
-   return chain::action( {}, config::system_account_name, "nonce", fc::raw::pack(v));
+   variant nonce = fc::mutable_variant_object()
+         ("value", v);
+   return chain::action( {}, config::system_account_name, "nonce", fc::raw::pack(nonce));
 }
 
 vector<chain::permission_level> get_account_permissions(const vector<string>& permissions) {
@@ -487,8 +489,8 @@ int main( int argc, char** argv ) {
    auto createAccount = create->add_subcommand("account", localized("Create a new account on the blockchain"), false);
    createAccount->add_option("creator", creator, localized("The name of the account creating the new account"))->required();
    createAccount->add_option("name", account_name, localized("The name of the new account"))->required();
-   createAccount->add_option("OwnerKey", owner_key_str, localized("The owner public key for the account"))->required();
-   createAccount->add_option("ActiveKey", active_key_str, localized("The active public key for the account"))->required();
+   createAccount->add_option("OwnerKey", owner_key_str, localized("The owner public key for the new account"))->required();
+   createAccount->add_option("ActiveKey", active_key_str, localized("The active public key for the new account"))->required();
    createAccount->add_flag("-s,--skip-signature", skip_sign, localized("Specify that unlocked wallet keys should not be used to sign transaction"));
    add_standard_transaction_options(createAccount);
    createAccount->set_callback([&] {

@@ -5,6 +5,7 @@
 #pragma once
 #include <eosio/chain/contracts/types.hpp>
 #include <eosio/chain/transaction.hpp>
+#include <eosio/chain/block.hpp>
 
 #include <fc/variant_object.hpp>
 
@@ -97,7 +98,10 @@ namespace impl {
              std::is_same<T, packed_transaction>::value ||
              std::is_same<T, action>::value ||
              std::is_same<T, transaction_trace>::value ||
-             std::is_same<T, action_trace>::value;
+             std::is_same<T, action_trace>::value ||
+             std::is_same<T, shard_summary>::value ||
+             std::is_same<T, region_summary>::value ||
+             std::is_base_of<signed_block_summary, T>:: value;
    }
 
    /**

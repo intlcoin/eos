@@ -3,6 +3,7 @@
  *  @copyright defined in eos/LICENSE.txt
  */
 #include <eosio/chain/contracts/abi_serializer.hpp>
+#include <eosio/chain/contracts/chain_initializer.hpp>
 #include <eosio/chain/contracts/types.hpp>
 #include <eosio/chain/authority.hpp>
 #include <eosio/chain/chain_config.hpp>
@@ -129,7 +130,7 @@ namespace eosio { namespace chain { namespace contracts {
       FC_ASSERT( actions.size() == abi.actions.size() );
       FC_ASSERT( tables.size() == abi.tables.size() );
    }
-   
+
    bool abi_serializer::is_builtin_type(const type_name& type)const {
       return built_in_types.find(type) != built_in_types.end();
    }
