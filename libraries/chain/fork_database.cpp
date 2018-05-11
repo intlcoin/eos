@@ -20,8 +20,7 @@ void fork_database::pop_block()
 {
    FC_ASSERT( _head, "no blocks to pop" );
    auto prev = _head->prev.lock();
-   FC_ASSERT( prev, "poping block would leave head block null" );
-    _head = prev;
+   _head = prev;
 }
 
 void     fork_database::start_block(signed_block b)
@@ -55,7 +54,8 @@ void  fork_database::_push_block(const item_ptr& item)
 {
    if( _head ) // make sure the block is within the range that we are caching
    {
-      FC_ASSERT( item->num > std::max<int64_t>( 0, int64_t(_head->num) - (_max_size) ),
+      EOS_ASSERT( item->num > std::max<int64_t>( 0, int64_t(_head->num) - (_max_size) ),
+                 block_too_old_exception,
                  "attempting to push a block that is too old", 
                  ("item->num",item->num)("head",_head->num)("max_size",_max_size));
    }
@@ -73,6 +73,9 @@ void  fork_database::_push_block(const item_ptr& item)
    if( !_head ) _head = item;
    else if( item->num > _head->num )
    {
+      uint32_t delta = item->data.timestamp.slot - _head->data.timestamp.slot;
+      if (delta > 1)
+         wlog("Number of missed blocks: ${num}", ("num", delta-1));
       _head = item;
       uint32_t min_num = _head->num - std::min( _max_size, _head->num );
 //      ilog( "min block in fork DB ${n}, max_size: ${m}", ("n",min_num)("m",_max_size) );

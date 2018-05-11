@@ -2,6 +2,8 @@
 #include <eosio/testing/tester.hpp>
 #include <eosio/chain/contracts/abi_serializer.hpp>
 #include <eosio/chain_plugin/chain_plugin.hpp>
+#include <chainbase/chainbase.hpp>
+#include <eosio/chain/fixed_key.hpp>
 
 #include <identity/identity.wast.hpp>
 #include <identity/identity.abi.hpp>
@@ -11,8 +13,17 @@
 #include <Runtime/Runtime.h>
 
 #include <fc/variant_object.hpp>
+#include <fc/io/json.hpp>
+
+#include <algorithm>
 
 #include "test_wasts.hpp"
+
+#ifdef NON_VALIDATING_TEST
+#define TESTER tester
+#else
+#define TESTER validating_tester
+#endif
 
 using namespace eosio;
 using namespace eosio::chain;
@@ -21,7 +32,7 @@ using namespace eosio::chain_apis;
 using namespace eosio::testing;
 using namespace fc;
 
-class identity_tester : public tester {
+class identity_tester : public TESTER {
 public:
 
    identity_tester() {
@@ -47,6 +58,7 @@ public:
       abi_ser_test.set_abi(abi_test);
 
       const global_property_object &gpo = control->get_global_properties();
+      FC_ASSERT(0 < gpo.active_producers.producers.size(), "No producers");
       producer_name = (string)gpo.active_producers.producers.front().producer_name;
    }
 
@@ -73,7 +85,7 @@ public:
       get_owner_act.data = abi_ser_test.variant_to_binary("getowner", mutable_variant_object()
                                                           ("identity", identity)
       );
-      BOOST_REQUIRE_EQUAL(success(), push_action(std::move(get_owner_act), 0));
+      BOOST_REQUIRE_EQUAL(success(), push_action(std::move(get_owner_act), N(alice)));
       return get_result_uint64();
    }
 
@@ -85,7 +97,7 @@ public:
       get_identity_act.data = abi_ser_test.variant_to_binary("getidentity", mutable_variant_object()
                                                           ("account", account)
       );
-      BOOST_REQUIRE_EQUAL(success(), push_action(std::move(get_identity_act), 0));
+      BOOST_REQUIRE_EQUAL(success(), push_action(std::move(get_identity_act), N(alice)));
       return get_result_uint64();
    }
 
@@ -97,7 +109,7 @@ public:
                                                   ("creator", account_name)
                                                   ("identity", identity)
       );
-      return push_action( std::move(create_act), (auth ? string_to_name(account_name.c_str()) : 0) );
+      return push_action( std::move(create_act), (auth ? string_to_name(account_name.c_str()) : (string_to_name(account_name.c_str()) == N(bob)) ? N(alice) : N(bob)));
    }
 
    fc::variant get_identity(uint64_t idnt) {
@@ -112,7 +124,7 @@ public:
       BOOST_REQUIRE_EQUAL(idnt, itr->primary_key);
 
       vector<char> data;
-      read_only::copy_row(*itr, data);
+      read_only::copy_inline_row(*itr, data);
       return abi_ser.binary_to_variant("identrow", data);
    }
 
@@ -126,22 +138,30 @@ public:
                                                 ("identity", identity)
                                                 ("value", fields)
       );
-      return push_action( std::move(cert_act), (auth ? string_to_name(certifier.c_str()) : 0) );
+      return push_action( std::move(cert_act), (auth ? string_to_name(certifier.c_str()) : (string_to_name(certifier.c_str()) == N(bob)) ? N(alice) : N(bob)));
    }
 
    fc::variant get_certrow(uint64_t identity, const string& property, uint64_t trusted, const string& certifier) {
       const auto& db = control->get_database();
-      const auto* t_id = db.find<table_id_object, by_code_scope_table>(boost::make_tuple(N(identity), identity, N(certs)));
-      FC_ASSERT(t_id != 0, "certrow not found");
+      const auto* t_id = db.find<table_id_object, by_code_scope_table>(boost::make_tuple(N(identity), identity, N( certs )));
+      if ( !t_id ) {
+         return fc::variant(nullptr);
+      }
 
-      uint64_t prop = string_to_name(property.c_str());
-      uint64_t cert = string_to_name(certifier.c_str());
-      const auto& idx = db.get_index<key64x64x64_value_index, by_scope_primary>();
-      auto itr = idx.lower_bound(boost::make_tuple(t_id->id, prop, trusted, cert));
+      const auto& idx = db.get_index<index256_index, by_secondary>();
+      auto key = key256::make_from_word_sequence<uint64_t>(string_to_name(property.c_str()), trusted, string_to_name(certifier.c_str()));
 
-      if (itr != idx.end() && itr->t_id == t_id->id && prop == itr->primary_key && trusted == itr->secondary_key && cert == itr->tertiary_key) {
+      auto itr = idx.lower_bound(boost::make_tuple(t_id->id, key.get_array()));
+      if (itr != idx.end() && itr->t_id == t_id->id && itr->secondary_key == key.get_array()) {
+         auto primary_key = itr->primary_key;
+         const auto& idx = db.get_index<key_value_index, by_scope_primary>();
+
+         auto itr = idx.lower_bound(boost::make_tuple(t_id->id, primary_key));
+         FC_ASSERT( itr != idx.end() && itr->t_id == t_id->id && primary_key == itr->primary_key,
+                    "Record found in secondary index, but not found in primary index."
+         );
          vector<char> data;
-         read_only::copy_row(*itr, data);
+         read_only::copy_inline_row(*itr, data);
          return abi_ser.binary_to_variant("certrow", data);
       } else {
          return fc::variant(nullptr);
@@ -159,7 +179,7 @@ public:
       auto itr = idx.lower_bound(boost::make_tuple(t_id->id, N(account)));
       if( itr != idx.end() && itr->t_id == t_id->id && N(account) == itr->primary_key) {
          vector<char> data;
-         read_only::copy_row(*itr, data);
+         read_only::copy_inline_row(*itr, data);
          return abi_ser.binary_to_variant("accountrow", data);
       } else {
          return fc::variant(nullptr);
@@ -221,14 +241,15 @@ BOOST_FIXTURE_TEST_CASE( identity_create, identity_tester ) try {
    BOOST_REQUIRE_EQUAL( 2, idnt2["identity"].as_uint64());
    BOOST_REQUIRE_EQUAL( "alice", idnt2["creator"].as_string());
 
+   //bob can create an identity as well
+   BOOST_REQUIRE_EQUAL(success(), create_identity("bob", 1));
+
    //identity == 0 has special meaning, should be impossible to create
    BOOST_REQUIRE_EQUAL(error("condition: assertion failed: identity=0 is not allowed"), create_identity("alice", 0));
 
    //creating adentity without authentication is not allowed
    BOOST_REQUIRE_EQUAL(error("missing authority of alice"), create_identity("alice", 3, false));
 
-   //bob can create an identity as well
-   BOOST_REQUIRE_EQUAL(success(), create_identity("bob", 1));
    fc::variant idnt_bob = get_identity(1);
    BOOST_REQUIRE_EQUAL( 1, idnt_bob["identity"].as_uint64());
    BOOST_REQUIRE_EQUAL( "bob", idnt_bob["creator"].as_string());

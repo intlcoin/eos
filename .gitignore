@@ -29,7 +29,6 @@ libraries/egenesis/egenesis_full.cpp
 libraries/egenesis/embed_genesis
 libraries/types/type_generator
 libraries/types/types_test
-libraries/types/include/eos/types/generated.hpp
 
 libraries/wallet/Doxyfile
 libraries/wallet/api_documentation.cpp
@@ -48,12 +47,16 @@ programs/eos-walletd/eos-walletd
 programs/eosiod/eosiod
 programs/eosioc/eosioc
 programs/launcher/launcher
+programs/eosio-abigen/eosio-abigen
+
+scripts/tn_init.sh
 
 tests/app_test
 tests/chain_bench
 tests/chain_test
 tests/intense_test
 tests/performance_test
+tests/tests/config.hpp
 
 doxygen
 
@@ -72,6 +75,7 @@ object_database/*
 build/*
 build-debug/*
 
-tn_data_*
+etc/eosio/node_*
+var/lib/node_*
 .vscode
 .DS_Store

@@ -1,13 +1,18 @@
 #include <boost/test/unit_test.hpp>
 #include <eosio/testing/tester.hpp>
 
+#ifdef NON_VALIDATING_TEST
+#define TESTER tester
+#else
+#define TESTER validating_tester
+#endif
 
 using namespace eosio;
 using namespace eosio::chain;
 using namespace eosio::chain::contracts;
 using namespace eosio::testing;
 
-auto make_postrecovery(const tester &t, account_name account, string role) {
+auto make_postrecovery(const TESTER &t, account_name account, string role) {
    signed_transaction trx;
    trx.actions.emplace_back( vector<permission_level>{{account,config::active_name}},
                              postrecovery{
@@ -15,18 +20,18 @@ auto make_postrecovery(const tester &t, account_name account, string role) {
                                 .data    = authority(t.get_public_key(account, role)),
                                 .memo    = "Test recovery"
                              } );
-   t.set_tapos(trx);
+   t.set_transaction_headers(trx);
    trx.sign(t.get_private_key(account, "active"), chain_id_type());
    return trx;
 }
 
-auto make_vetorecovery(const tester &t, account_name account, permission_name vetoperm = N(active), optional<private_key_type> signing_key = optional<private_key_type>()) {
+auto make_vetorecovery(const TESTER &t, account_name account, permission_name vetoperm = N(active), optional<private_key_type> signing_key = optional<private_key_type>()) {
    signed_transaction trx;
    trx.actions.emplace_back( vector<permission_level>{{account,vetoperm}},
                              vetorecovery{
                                 .account = account
                              } );
-   t.set_tapos(trx);
+   t.set_transaction_headers(trx);
    if (signing_key) {
       trx.sign(*signing_key, chain_id_type());
    } else {
@@ -35,18 +40,46 @@ auto make_vetorecovery(const tester &t, account_name account, permission_name ve
    return trx;
 }
 
-struct recov_tester : public tester {
-   transaction_trace push_reqauth(account_name from, string role) {
-      return tester::push_reqauth(from, vector<permission_level>{{from, config::owner_name}}, {get_private_key(from, role)} );
-   }
-};
-
-
 
 BOOST_AUTO_TEST_SUITE(recovery_tests)
 
+BOOST_FIXTURE_TEST_CASE( test_recovery_multisig_owner, TESTER ) try {
+    produce_blocks(1000);
+    create_account(N(alice), config::system_account_name, true);
+    produce_block();
 
-BOOST_FIXTURE_TEST_CASE( test_recovery_owner, recov_tester ) try {
+    BOOST_REQUIRE_THROW(push_reqauth(N(alice), "owner"), tx_missing_sigs); // requires multisig authorization
+    push_reqauth(N(alice), "owner", true);
+    produce_block();
+
+    fc::time_point expected_recovery(fc::seconds(control->head_block_time().sec_since_epoch()) +fc::days(30));
+
+    transaction_id_type recovery_txid;
+    {
+        signed_transaction trx = make_postrecovery(*this, N(alice), "owner.recov");
+        auto trace = push_transaction(trx);
+        BOOST_REQUIRE_EQUAL(trace.deferred_transaction_requests.size(), 1);
+        recovery_txid = trace.deferred_transaction_requests.front().get<deferred_transaction>().id();
+        produce_block();
+        BOOST_REQUIRE_EQUAL(chain_has_transaction(trx.id()), true);
+    }
+
+    auto skip_time = expected_recovery - control->head_block_time() - fc::milliseconds(config::block_interval_ms);
+    produce_block(skip_time);
+    control->push_deferred_transactions(true);
+    auto last_old_nonce_id = push_reqauth(N(alice), "owner", true).id;
+    produce_block();
+    control->push_deferred_transactions(true);
+
+    BOOST_REQUIRE_EQUAL(chain_has_transaction(last_old_nonce_id), true);
+    BOOST_REQUIRE_THROW(push_reqauth(N(alice), "owner", true), tx_missing_sigs);
+    auto first_new_nonce_id = push_reqauth(N(alice), "owner.recov").id;
+    produce_block();
+    BOOST_REQUIRE_EQUAL(chain_has_transaction(first_new_nonce_id), true);
+
+} FC_LOG_AND_RETHROW()
+
+BOOST_FIXTURE_TEST_CASE( test_recovery_owner, TESTER ) try {
    produce_blocks(1000);
    create_account(N(alice));
    produce_block();
@@ -57,8 +90,8 @@ BOOST_FIXTURE_TEST_CASE( test_recovery_owner, recov_tester ) try {
    {
       signed_transaction trx = make_postrecovery(*this, N(alice), "owner.recov");
       auto trace = push_transaction(trx);
-      BOOST_REQUIRE_EQUAL(trace.deferred_transactions.size(), 1);
-      recovery_txid = trace.deferred_transactions.front().id();
+      BOOST_REQUIRE_EQUAL(trace.deferred_transaction_requests.size(), 1);
+      recovery_txid = trace.deferred_transaction_requests.front().get<deferred_transaction>().id();
       produce_block();
       BOOST_REQUIRE_EQUAL(chain_has_transaction(trx.id()), true);
    }
@@ -79,7 +112,7 @@ BOOST_FIXTURE_TEST_CASE( test_recovery_owner, recov_tester ) try {
 
 } FC_LOG_AND_RETHROW()
 
-BOOST_FIXTURE_TEST_CASE( test_recovery_owner_veto, recov_tester ) try {
+BOOST_FIXTURE_TEST_CASE( test_recovery_owner_veto, TESTER ) try {
    produce_blocks(1000);
    create_account(N(alice));
    produce_block();
@@ -90,8 +123,8 @@ BOOST_FIXTURE_TEST_CASE( test_recovery_owner_veto, recov_tester ) try {
    {
       signed_transaction trx = make_postrecovery(*this, N(alice), "owner.recov");
       auto trace = push_transaction(trx);
-      BOOST_REQUIRE_EQUAL(trace.deferred_transactions.size(), 1);
-      recovery_txid = trace.deferred_transactions.front().id();
+      BOOST_REQUIRE_EQUAL(trace.deferred_transaction_requests.size(), 1);
+      recovery_txid = trace.deferred_transaction_requests.front().get<deferred_transaction>().id();
       produce_block();
       BOOST_REQUIRE_EQUAL(chain_has_transaction(trx.id()), true);
    }
@@ -121,7 +154,7 @@ BOOST_FIXTURE_TEST_CASE( test_recovery_owner_veto, recov_tester ) try {
 
 } FC_LOG_AND_RETHROW()
 
-BOOST_FIXTURE_TEST_CASE( test_recovery_bad_creator, recov_tester ) try {
+BOOST_FIXTURE_TEST_CASE( test_recovery_bad_creator, TESTER ) try {
    produce_blocks(1000);
    create_account(N(alice), config::system_account_name, true);
    produce_block();
@@ -132,8 +165,8 @@ BOOST_FIXTURE_TEST_CASE( test_recovery_bad_creator, recov_tester ) try {
    {
       signed_transaction trx = make_postrecovery(*this, N(alice), "owner");
       auto trace = push_transaction(trx);
-      BOOST_REQUIRE_EQUAL(trace.deferred_transactions.size(), 1);
-      recovery_txid = trace.deferred_transactions.front().id();
+      BOOST_REQUIRE_EQUAL(trace.deferred_transaction_requests.size(), 1);
+      recovery_txid = trace.deferred_transaction_requests.front().get<deferred_transaction>().id();
       produce_block();
       BOOST_REQUIRE_EQUAL(chain_has_transaction(trx.id()), true);
    }
@@ -172,6 +205,5 @@ BOOST_FIXTURE_TEST_CASE( test_recovery_bad_creator, recov_tester ) try {
    BOOST_REQUIRE_EQUAL(chain_has_transaction(first_new_nonce_id), true);
 
 } FC_LOG_AND_RETHROW()
-
 
 BOOST_AUTO_TEST_SUITE_END()
