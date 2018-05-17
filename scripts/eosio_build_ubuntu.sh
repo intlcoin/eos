@@ -2,7 +2,7 @@
 	OS_MAJ=$(echo "${OS_VER}" | cut -d'.' -f1)
 	OS_MIN=$(echo "${OS_VER}" | cut -d'.' -f2)
 
-	MEM_MEG=$( free -m | grep Mem | tr -s ' ' | cut -d\  -f2 || cut -d' ' -f2 )
+	MEM_MEG=$( free -m | sed -n 2p | tr -s ' ' | cut -d\  -f2 || cut -d' ' -f2 )
 	CPU_SPEED=$( lscpu | grep -m1 "MHz" | tr -s ' ' | cut -d\  -f3 || cut -d' ' -f3 | cut -d'.' -f1 )
 	CPU_CORE=$( lscpu | grep "^CPU(s)" | tr -s ' ' | cut -d\  -f2 || cut -d' ' -f2 )
 
@@ -53,9 +53,9 @@
 		exit 1
 	fi
 
-	DEP_ARRAY=(clang-4.0 lldb-4.0 libclang-4.0-dev cmake make libbz2-dev libssl-dev \
+	DEP_ARRAY=(clang-4.0 lldb-4.0 libclang-4.0-dev cmake make automake libbz2-dev libssl-dev \
 	libgmp3-dev autotools-dev build-essential libicu-dev python2.7-dev python3-dev \
-	autoconf libtool curl zlib1g-dev doxygen graphviz)
+        autoconf libtool curl zlib1g-dev doxygen graphviz)
 	COUNT=1
 	DISPLAY=""
 	DEP=""
@@ -82,14 +82,14 @@
 
 	if [ "${COUNT}" -gt 1 ]; then
 		printf "\\n\\tThe following dependencies are required to install EOSIO.\\n"
-		printf "\\n\\t%s\\n\\n" "${DISPLAY}"
+		printf "\\n\\t${DISPLAY}\\n\\n" 
 		printf "\\tDo you wish to install these packages?\\n"
 		select yn in "Yes" "No"; do
 			case $yn in
 				[Yy]* ) 
 					printf "\\n\\n\\tInstalling dependencies\\n\\n"
 					sudo apt-get update
-					if ! sudo apt-get -y install "${DEP}"
+					if ! sudo apt-get -y install ${DEP}
 					then
 						printf "\\n\\tDPKG dependency failed.\\n"
 						printf "\\n\\tExiting now.\\n"
@@ -410,9 +410,9 @@ mongodconf
 			printf "\\tExiting now.\\n\\n"
 			exit 1;
 		fi
-		printf "\\n\\tsecp256k1 successfully installed @ /usr/local/lib/libsecp256k1.a.\\n\\n"
+		printf "\\n\\tsecp256k1 successfully installed @ /usr/local/lib.\\n\\n"
 	else
-		printf "\\tsecp256k1 found @ /usr/local/lib/libsecp256k1.a.\\n"
+		printf "\\tsecp256k1 found @ /usr/local/lib.\\n"
 	fi
 
 	printf "\\n\\tChecking for LLVM with WASM support.\\n"
